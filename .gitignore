@@ -4,13 +4,14 @@ __pycache__/
 *$py.class
 
 # Models (Large weights)
-# Standard base models are downloaded via setup_models.py
+# We ignore the standard base models which are downloaded by setup_models.py
 yolov8n.pt
 yolov8n-pose.pt
-# Custom weights can be excluded if they are too large for git
-# *.pt
+# Specific PPE weights might be committed if they are small or proprietary,
+# but usually, we ignore large .pt files.
+# *.pt 
 
-# Virtual environment
+# Virtual environments
 .venv/
 venv/
 ENV/
@@ -20,10 +21,6 @@ env/
 .streamlit/
 static/
 
-# Development / Scratch
-scratch/
-temp/
-
 # IDEs
 .vscode/
 .idea/
@@ -32,9 +29,10 @@ temp/
 .DS_Store
 Thumbs.db
 
-# Environments
-.env
-
-# Logs
+# Project Specific
+graphify-out/
+#scratch/
+temp/
 logs/
 *.log
+.env

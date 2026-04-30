@@ -11,7 +11,7 @@ class WorkerSafetyDetector:
     3. Hybrid HSV Color Analysis (Fallback)
     """
 
-    def __init__(self, conf=0.45):
+    def __init__(self, conf=0.35):
         self.conf = conf
         # Load models with optimization
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,31 +49,37 @@ class WorkerSafetyDetector:
 
     def _check_fall(self, keypoints, box_coords, state):
         """
-        Balanced Fall/Lying Down Detection:
-        - Avoids sitting by checking torso angle (> 60 deg).
-        - Verifies vertical profile (lying down is 'flatter' than sitting).
+        Robust Fall/Lying Down Detection:
+        - Detects fall even with partial pose data.
+        - Uses aspect ratio, torso angle, and vertical profile.
+        - Improved sensitivity for various lying down postures.
         """
         bx1, by1, bx2, by2 = box_coords
         w, h = bx2 - bx1, by2 - by1
         aspect = w / max(h, 1)
         
-        # 1. Sitting/Standing usually has a taller box. 
-        # Lying down/Fallen should be significantly wider than tall.
-        if aspect < 1.3: 
+        # 1. Extreme Horizontal Case: Almost certainly a fall/lying down
+        if aspect > 1.4: # Lowered from 1.6 for faster detection of lying down
+            return True
+
+        # 2. Moderate Horizontal Case: Requires pose confirmation
+        if aspect < 0.9: # Lowered from 1.05: Standing/sitting is strictly vertical
             return False
             
         try:
-            if keypoints is None or len(keypoints) < 17:
-                return aspect > 2.0 # Without pose, be more conservative
+            if keypoints is None or len(keypoints) < 5: # Lowered from 17
+                return aspect > 1.4 # Without enough pose, be slightly conservative
             
-            # YOLO returns [0,0] if not detected
-            def is_v(kp): return kp[0] > 1 and kp[1] > 1
+            # YOLO returns [0,0] if keypoint not detected
+            def is_v(kp): return kp is not None and len(kp) >= 2 and kp[0] > 1 and kp[1] > 1
 
-            ls, rs = keypoints[5], keypoints[6]   # Shoulders
-            lh, rh = keypoints[11], keypoints[12] # Hips
-            nose = keypoints[0]
+            # Keypoints
+            nose = keypoints[0] if len(keypoints) > 0 else None
+            ls, rs = keypoints[5] if len(keypoints) > 5 else None, keypoints[6] if len(keypoints) > 6 else None
+            lh, rh = keypoints[11] if len(keypoints) > 11 else None, keypoints[12] if len(keypoints) > 12 else None
+            la, ra = keypoints[15] if len(keypoints) > 15 else None, keypoints[16] if len(keypoints) > 16 else None
             
-            # Torso Angle Logic
+            # Torso Angle Logic (from vertical)
             sh_pts = [p for p in [ls, rs] if is_v(p)]
             hp_pts = [p for p in [lh, rh] if is_v(p)]
             
@@ -84,21 +90,30 @@ class WorkerSafetyDetector:
                 dx, dy = mid_sh[0] - mid_hp[0], mid_sh[1] - mid_hp[1]
                 angle = np.degrees(np.arctan2(abs(dx), max(abs(dy), 1)))
 
-            # Vertical Y-coordinate check: nose and hips should be relatively close vertically
-            # In sitting, the nose is much higher than the hips.
-            y_diff = 1000
+            # Vertical Profile: Lying down means nose, hips, and ankles are at similar Y
+            y_diff_nose_hip = 1000
             if is_v(nose) and hp_pts:
                 mid_hp_y = np.mean(hp_pts, axis=0)[1]
-                y_diff = abs(nose[1] - mid_hp_y)
+                y_diff_nose_hip = abs(nose[1] - mid_hp_y)
+            
+            y_diff_nose_ankle = 1000
+            ak_pts = [p for p in [la, ra] if is_v(p)]
+            if is_v(nose) and ak_pts:
+                mid_ak_y = np.mean(ak_pts, axis=0)[1]
+                y_diff_nose_ankle = abs(nose[1] - mid_ak_y)
 
-            # Balanced Condition:
-            # 1. Box is horizontal (aspect > 1.3)
-            # 2. Torso is significantly tilted (> 60 degrees)
-            # 3. Nose is near hip level (y_diff < 40% of box height) - This specifically filters out sitting.
-            return aspect > 1.3 and angle > 60 and y_diff < (h * 0.4)
+            # Balanced Fallen Criteria:
+            is_tilted = angle > 40 # Lowered from 45
+            is_flat = y_diff_nose_hip < (h * 0.7) or y_diff_nose_ankle < (h * 0.7) # Relaxed from 0.6
+            
+            # Higher sensitivity if aspect ratio is already high
+            if aspect > 1.2:
+                return is_tilted or is_flat or (angle > 30)
+            
+            return aspect > 0.9 and is_tilted and is_flat
             
         except Exception:
-            return aspect > 2.0
+            return aspect > 1.4
 
     def _check_ppe_color(self, roi, item_type):
         if roi is None or roi.size == 0: return False
@@ -125,14 +140,17 @@ class WorkerSafetyDetector:
             mask = cv2.bitwise_or(mask, mask_green)
             mask = cv2.bitwise_or(mask, mask_blue)
         else: # vest (High-vis green/yellow or Orange)
-            # 1. Neon Green / High-Vis Yellow Vests
-            mask_neon   = cv2.inRange(hsv, (25, 80, 80), (85, 255, 255))
-            # 2. High-Vis Orange Vests
-            mask_orange = cv2.inRange(hsv, (0, 120, 120), (20, 255, 255))
+            # 1. Neon Green / High-Vis Yellow Vests (Widened range)
+            mask_neon   = cv2.inRange(hsv, (20, 50, 50), (95, 255, 255))
+            # 2. High-Vis Orange Vests (Widened range)
+            mask_orange = cv2.inRange(hsv, (0, 50, 50), (25, 255, 255))
+            mask_red_v  = cv2.inRange(hsv, (160, 50, 50), (180, 255, 255))
             mask = cv2.bitwise_or(mask_neon, mask_orange)
+            mask = cv2.bitwise_or(mask, mask_red_v)
 
         ratio = np.sum(mask > 0) / max(mask.size, 1)
-        return ratio > 0.18 # High precision threshold remains at 0.18 for 80% certainty rule
+        # Lowered from 0.18 to 0.12 for better sensitivity in fallback mode
+        return ratio > 0.12 # Optimized threshold for fallback detection stability
 
     def process_frame(self, frame):
         fH, fW = frame.shape[:2]
@@ -189,13 +207,15 @@ class WorkerSafetyDetector:
                     has_vest = False
                     
                     if self.ppe_model:
-                        pad = 40 # Increased padding for better context and precision
+                        pad = 50 # Increased padding for better context and precision
                         cx1, cy1 = max(0, x1-pad), max(0, y1-pad)
                         cx2, cy2 = min(fW, x2+pad), min(fH, y2+pad)
                         crop = frame[cy1:cy2, cx1:cx2]
                         
                         if crop.size > 0:
-                            p_res = self.ppe_model(crop, verbose=False, conf=0.8, imgsz=160, half=self.half)
+                            # Lowered confidence from 0.8 to 0.4 for better sensitivity
+                            # Increased imgsz from 160 to 320 for better detail recognition
+                            p_res = self.ppe_model(crop, verbose=False, conf=0.4, imgsz=320, half=self.half)
                             for pr in p_res:
                                 for pbox in pr.boxes:
                                     cls = self.ppe_model.names[int(pbox.cls[0])].lower()
@@ -203,9 +223,10 @@ class WorkerSafetyDetector:
                                     if "vest" in cls: has_vest = True
                     
                     if not has_helmet or not has_vest:
+                        # Improved ROI selection for color fallback
                         h_h = (y2-y1)//3
-                        helmet_roi = frame[y1:y1+h_h, x1:x2]
-                        vest_roi = frame[y1+h_h:y1+(y2-y1)//2, x1:x2]
+                        helmet_roi = frame[max(0, y1-20):y1+h_h, x1:x2] # Wider head ROI
+                        vest_roi = frame[y1+h_h//2:y2-h_h, x1:x2] # Better torso ROI
                         if not has_helmet: has_helmet = self._check_ppe_color(helmet_roi, "helmet")
                         if not has_vest: has_vest = self._check_ppe_color(vest_roi, "vest")
                     
@@ -217,18 +238,18 @@ class WorkerSafetyDetector:
                     ph["vest"] = ph["vest"][-self.PPE_WINDOW:]
                     
                     # Hysteresis Logic:
-                    # To BECOME safe: Need >90% consistency (very sure)
-                    # To STAY safe: Need >75% consistency (allows for brief noise/occlusion)
+                    # To BECOME safe: Need >80% consistency (relaxed from 90%)
+                    # To STAY safe: Need >65% consistency (relaxed from 75%)
                     was_safe = state.get("is_safe", False)
                     h_rate = sum(ph["helmet"]) / len(ph["helmet"])
                     v_rate = sum(ph["vest"]) / len(ph["vest"])
                     
                     if was_safe:
-                        smooth_helmet = h_rate > 0.75
-                        smooth_vest = v_rate > 0.75
+                        smooth_helmet = h_rate > 0.65
+                        smooth_vest = v_rate > 0.65
                     else:
-                        smooth_helmet = h_rate > 0.90
-                        smooth_vest = v_rate > 0.90
+                        smooth_helmet = h_rate > 0.80
+                        smooth_vest = v_rate > 0.80
                         
                     state["is_safe"] = smooth_helmet and smooth_vest
                     

@@ -31,7 +31,7 @@ def _init(key, val):
 
 _init("running",       False)
 _init("dark_mode",     True)
-_init("confidence",    0.50)
+_init("confidence",    0.35)
 _init("cam_index",     0)
 _init("logs",          [])
 _init("chart_data",    pd.DataFrame(columns=["Time", "Workers", "Violations", "Falls"]))
@@ -112,6 +112,12 @@ with st.sidebar:
         if st.button(f"{p}", use_container_width=True, type="secondary" if st.session_state.page != p else "primary"):
             st.session_state.page = p
             st.rerun()
+
+    st.markdown("<div class='sb-section'>Detection Settings</div>", unsafe_allow_html=True)
+    new_conf = st.slider("Sensitivity (Lower = More Sensitive)", 0.10, 0.90, st.session_state.confidence, 0.05)
+    if new_conf != st.session_state.confidence:
+        st.session_state.confidence = new_conf
+        st.rerun()
 
     st.markdown("<div class='sb-section'>System Performance</div>", unsafe_allow_html=True)
     st.markdown(f"""
