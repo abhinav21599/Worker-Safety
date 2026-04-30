@@ -4,9 +4,11 @@ __pycache__/
 *$py.class
 
 # Models (Large weights)
-*.pt
-!ppe_amirt.pt
-!ppe_hardhat.pt
+# Standard base models are downloaded via setup_models.py
+yolov8n.pt
+yolov8n-pose.pt
+# Custom weights can be excluded if they are too large for git
+# *.pt
 
 # Virtual environment
 .venv/
@@ -16,9 +18,11 @@ env/
 
 # Streamlit
 .streamlit/
+static/
 
 # Development / Scratch
 scratch/
+temp/
 
 # IDEs
 .vscode/
@@ -27,3 +31,10 @@ scratch/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Environments
+.env
+
+# Logs
+logs/
+*.log

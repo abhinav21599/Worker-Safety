@@ -41,6 +41,7 @@ _init("session_start", datetime.now())
 _init("total_workers", 0)
 _init("total_viols",   0)
 _init("emergency",     False)
+_init("alert_dismissed", False)
 
 # ─────────────────────────────────────────────
 # THEME SELECTION
@@ -167,7 +168,11 @@ if st.session_state.page == "Executive Dashboard":
         ui.render_logs(log_container, st.session_state.logs)
 
 elif st.session_state.page == "Live Monitoring":
-    ui.render_emergency_banner(st.session_state.emergency)
+    emergency_container = st.empty()
+    if st.session_state.emergency and not st.session_state.alert_dismissed:
+        if ui.render_emergency_banner(True):
+            st.session_state.alert_dismissed = True
+            st.rerun()
     
     col_v, col_i = st.columns([3, 1])
     
@@ -227,7 +232,18 @@ elif st.session_state.page == "Live Monitoring":
                 
                 st.session_state.total_workers = w
                 st.session_state.total_viols = v
-                st.session_state.emergency = (falls > 0)
+                
+                # Handle emergency and alert dismissal
+                new_emergency = (falls > 0)
+                if not new_emergency:
+                    st.session_state.alert_dismissed = False
+                st.session_state.emergency = new_emergency
+                
+                with emergency_container.container():
+                    if st.session_state.emergency and not st.session_state.alert_dismissed:
+                        if ui.render_emergency_banner(True):
+                            st.session_state.alert_dismissed = True
+                            st.rerun()
                 
                 # Update dynamic compliance rate for loop
                 loop_comp_rate = 100

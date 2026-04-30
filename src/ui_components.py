@@ -85,15 +85,21 @@ def render_attendance_table():
 
 def render_emergency_banner(active=False):
     if active:
-        st.markdown("""
-            <div class='pill-fallen' style='margin-bottom:20px; cursor:pointer;'>
-                <div style='font-size:1.5rem;'>🚨</div>
-                <div>
-                    <div style='font-weight:900; font-size:1.2rem; letter-spacing:0.05em;'>CRITICAL EMERGENCY DETECTED</div>
-                    <div style='font-size:0.8rem; opacity:0.9;'>Automated lockdown procedures initiated. Response team dispatched.</div>
+        cols = st.columns([0.9, 0.1])
+        with cols[0]:
+            st.markdown("""
+                <div class='pill-fallen' style='margin-bottom:20px;'>
+                    <div style='font-size:1.5rem;'>🚨</div>
+                    <div>
+                        <div style='font-weight:900; font-size:1.2rem; letter-spacing:0.05em;'>CRITICAL EMERGENCY DETECTED</div>
+                        <div style='font-size:0.8rem; opacity:0.9;'>Automated lockdown procedures initiated. Response team dispatched.</div>
+                    </div>
                 </div>
-            </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+        with cols[1]:
+            if st.button("✖️", key="dismiss_fall_alert", help="Dismiss Alert"):
+                return True
+    return False
 
 def render_alerts(container, alerts, workers):
     with container.container():

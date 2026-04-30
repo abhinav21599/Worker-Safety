@@ -42,46 +42,29 @@ class WorkerSafetyDetector:
         # State tracking for temporal smoothing
         self.person_states = {}  # {track_id: {"ppe": {"helmet": [], "vest": []}}}
         
-        self.FALL_CONFIRM_FRAMES = 15 # Increased for stability (~0.75s)
+        self.FALL_CONFIRM_FRAMES = 5 # Faster detection for demo (approx 0.25s)
         self.PPE_WINDOW = 30 # Increased window for much better stability (approx 1-1.5s)
         self.DETECTION_COOLDOWN = 60 
         self.MOVE_THRESHOLD = 3 # Stricter movement threshold
 
     def _check_fall(self, keypoints, box_coords, state):
         """
-        Ultra-Strict Fall Detection:
-        - Width must be > 2.5x Height (Deep Horizontal).
-        - Movement must be < 3 pixels (Static).
-        - Height must be small (Person is on the floor, not sitting).
+        Balanced Fall/Lying Down Detection:
+        - Avoids sitting by checking torso angle (> 60 deg).
+        - Verifies vertical profile (lying down is 'flatter' than sitting).
         """
         bx1, by1, bx2, by2 = box_coords
         w, h = bx2 - bx1, by2 - by1
         aspect = w / max(h, 1)
         
-        # Center point for movement tracking
-        cx, cy = (bx1 + bx2) // 2, (by1 + by2) // 2
-        
-        is_moving = False
-        if "last_pos" in state:
-            lx, ly = state["last_pos"]
-            dist = np.sqrt((cx - lx)**2 + (cy - ly)**2)
-            if dist > self.MOVE_THRESHOLD:
-                is_moving = True
-        
-        state["last_pos"] = (cx, cy)
-
-        # 1. Height check: A fallen person on the floor has a very small vertical profile.
-        # If the box is tall (like sitting), it's likely not a fall even if wide.
-        if h > w * 0.4: # Height must be less than 40% of width
-            return False
-
-        # 2. User requirement: width > 2.5x height, absolutely no movement
-        if aspect < 2.5 or is_moving:
+        # 1. Sitting/Standing usually has a taller box. 
+        # Lying down/Fallen should be significantly wider than tall.
+        if aspect < 1.3: 
             return False
             
         try:
             if keypoints is None or len(keypoints) < 17:
-                return aspect > 3.0 # Extremely wide if no pose data
+                return aspect > 2.0 # Without pose, be more conservative
             
             # YOLO returns [0,0] if not detected
             def is_v(kp): return kp[0] > 1 and kp[1] > 1
@@ -101,17 +84,21 @@ class WorkerSafetyDetector:
                 dx, dy = mid_sh[0] - mid_hp[0], mid_sh[1] - mid_hp[1]
                 angle = np.degrees(np.arctan2(abs(dx), max(abs(dy), 1)))
 
-            # Vertical Y-coordinate check: nose and hips should be at similar height
-            y_diff = 100
+            # Vertical Y-coordinate check: nose and hips should be relatively close vertically
+            # In sitting, the nose is much higher than the hips.
+            y_diff = 1000
             if is_v(nose) and hp_pts:
                 mid_hp_y = np.mean(hp_pts, axis=0)[1]
                 y_diff = abs(nose[1] - mid_hp_y)
 
-            # Final check: Very wide box + horizontal torso + head near hip level (flat)
-            return aspect > 2.5 and angle > 75 and y_diff < (h * 0.5)
+            # Balanced Condition:
+            # 1. Box is horizontal (aspect > 1.3)
+            # 2. Torso is significantly tilted (> 60 degrees)
+            # 3. Nose is near hip level (y_diff < 40% of box height) - This specifically filters out sitting.
+            return aspect > 1.3 and angle > 60 and y_diff < (h * 0.4)
             
         except Exception:
-            return aspect > 3.0
+            return aspect > 2.0
 
     def _check_ppe_color(self, roi, item_type):
         if roi is None or roi.size == 0: return False
