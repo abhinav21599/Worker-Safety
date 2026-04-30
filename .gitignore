@@ -3,13 +3,27 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Models (Large files)
-yolov8x-pose.pt
+# Models (Large weights)
+*.pt
+!ppe_amirt.pt
+!ppe_hardhat.pt
 
 # Virtual environment
 .venv/
 venv/
 ENV/
+env/
 
 # Streamlit
 .streamlit/
+
+# Development / Scratch
+scratch/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

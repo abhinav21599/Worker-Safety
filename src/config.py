@@ -1,388 +1,463 @@
+import base64
+import os
+
+# Helper to load background
+def load_bg_b64():
+    try:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Prefer optimized background, fallback to original
+        for name in ["bg_opt.png", "bg.png"]:
+            path = os.path.join(root, "assets", name)
+            if os.path.exists(path):
+                with open(path, "rb") as f:
+                    return base64.b64encode(f.read()).decode()
+        return ""
+    except:
+        return ""
+
+BG_B64 = load_bg_b64()
+
 # ==========================================
 # THEME CONFIGURATION
 # ==========================================
 
 LIGHT_THEME = {
-    "bg": "#F4F7FB",
-    "card_bg": "rgba(255, 255, 255, 0.85)",
-    "card_border": "rgba(255, 255, 255, 0.5)",
-    "text_primary": "#0F172A",
-    "text_secondary": "#475569",
-    "text_muted": "#94A3B8",
-    "primary": "#3B82F6",
-    "success": "#10B981",
-    "danger": "#EF4444",
-    "warning": "#F59E0B",
-    "divider": "rgba(0, 0, 0, 0.05)",
-    "sidebar_bg": "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)",
-    "input_bg": "#FFFFFF",
-    "badge_bg": "linear-gradient(135deg, #10B981, #34D399)",
-    "badge_text": "#FFFFFF",
-    "badge_border": "transparent",
-    "alert_danger_bg": "linear-gradient(135deg, #FEF2F2, #FEE2E2)",
-    "alert_danger_text": "#B91C1C",
-    "alert_danger_border": "#EF4444",
-    "alert_success_bg": "linear-gradient(135deg, #ECFDF5, #D1FAE5)",
-    "alert_success_text": "#047857",
-    "alert_success_border": "#10B981",
-    "metric_value": "#0F172A",
-    "shadow": "20px 20px 60px #cfd2d5, -20px -20px 60px #ffffff",
-    "card_shadow": "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
-    "hover_shadow": "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
-    "chart_color": "url(#colorGradient)",
-    "offline_bg": "rgba(241, 245, 249, 0.7)",
+    "bg": "#f8fafc",
+    "surface": "rgba(255, 255, 255, 0.9)",
+    "surface2": "#f1f5f9",
+    "border": "rgba(148, 163, 184, 0.2)",
+    "text": "#0f172a",
+    "text2": "#475569",
+    "blue": "#0ea5e9",
+    "green": "#10b981",
+    "red": "#f43f5e",
+    "amber": "#f59e0b",
+    "purple": "#A855F7",
+    "sidebar_bg": "#ffffff",
+    "overlay": "rgba(248, 250, 252, 0.85)"
 }
 
 DARK_THEME = {
-    "bg": "#0B1120",
-    "card_bg": "rgba(30, 41, 59, 0.75)",
-    "card_border": "rgba(255, 255, 255, 0.05)",
-    "text_primary": "#F8FAFC",
-    "text_secondary": "#CBD5E1",
-    "text_muted": "#64748B",
-    "primary": "#60A5FA",
-    "success": "#34D399",
-    "danger": "#F87171",
-    "warning": "#FBBF24",
-    "divider": "rgba(255, 255, 255, 0.05)",
-    "sidebar_bg": "linear-gradient(180deg, #0F172A 0%, #0B1120 100%)",
-    "input_bg": "#0F172A",
-    "badge_bg": "linear-gradient(135deg, #059669, #10B981)",
-    "badge_text": "#FFFFFF",
-    "badge_border": "transparent",
-    "alert_danger_bg": "linear-gradient(135deg, #450A0A, #7F1D1D)",
-    "alert_danger_text": "#FECACA",
-    "alert_danger_border": "#EF4444",
-    "alert_success_bg": "linear-gradient(135deg, #064E3B, #065F46)",
-    "alert_success_text": "#A7F3D0",
-    "alert_success_border": "#10B981",
-    "metric_value": "#FFFFFF",
-    "shadow": "20px 20px 60px #090e1b, -20px -20px 60px #0d1425",
-    "card_shadow": "0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4)",
-    "hover_shadow": "0 25px 50px -12px rgba(0, 0, 0, 0.8)",
-    "chart_color": "#F87171",
-    "offline_bg": "rgba(15, 23, 42, 0.6)",
+    "bg": "#020617",
+    "surface": "rgba(15, 23, 42, 0.95)",
+    "surface2": "rgba(30, 41, 59, 0.7)",
+    "border": "rgba(56, 189, 248, 0.3)",
+    "text": "#F8FAFC",
+    "text2": "#94A3B8",
+    "blue": "#38BDF8",
+    "green": "#4ADE80",
+    "red": "#FB7185",
+    "amber": "#FBBF24",
+    "purple": "#A855F7",
+    "sidebar_bg": "#020617",
+    "overlay": "rgba(2, 6, 23, 0.85)"
 }
 
-
 def get_css(theme: dict) -> str:
-    """Generate the full CSS string based on the active theme dictionary."""
     t = theme
     return f"""
 <style>
-    /* ================================================
-       GLOBAL / APP
-       ================================================ */
-    .stApp {{
-        background-color: {t['bg']} !important;
-        background-image: radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.05), transparent 25%),
-                          radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.05), transparent 25%);
-    }}
-    
-    /* Sidebar */
-    section[data-testid="stSidebar"] {{
-        background: {t['sidebar_bg']} !important;
-        border-right: 1px solid {t['card_border']} !important;
-        backdrop-filter: blur(10px);
-    }}
-    section[data-testid="stSidebar"] * {{
-        color: {t['text_primary']} !important;
-    }}
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
 
-    /* All Streamlit text elements */
-    .stApp p, .stApp span, .stApp label, .stApp div {{
-        color: {t['text_secondary']};
-    }}
-    .stApp h1, .stApp h2, .stApp h3 {{
-        color: {t['text_primary']} !important;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }}
-    hr {{
-        border-color: {t['divider']} !important;
-    }}
+/* Hide Streamlit Default UI */
+header, footer, .stDeployButton {{
+    visibility: hidden;
+    height: 0;
+    display: none !important;
+}}
+[data-testid="stHeader"] {{
+    display: none !important;
+}}
 
-    /* ================================================
-       PREMIUM 3D CARDS
-       ================================================ */
-    .card {{
-        background: {t['card_bg']};
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border-radius: 20px;
-        padding: 24px;
-        box-shadow: {t['card_shadow']};
-        margin-bottom: 24px;
-        border: 1px solid {t['card_border']};
-        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        position: relative;
-        overflow: hidden;
-    }}
-    .card::before {{
-        content: '';
-        position: absolute; top: -50%; left: -50%; width: 200%; height: 200%;
-        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 60%);
-        transform: rotate(45deg);
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.5s;
-    }}
-    .card:hover {{
-        transform: translateY(-8px) scale(1.02);
-        box-shadow: {t['hover_shadow']};
-    }}
-    .card:hover::before {{ opacity: 1; }}
+/* Main App Container */
+.stApp {{
+    font-family: 'Outfit', sans-serif;
+    background: transparent !important;
+}}
 
-    /* 3D Stat card specialization */
-    .stat-card {{
-        background: {t['card_bg']};
-        backdrop-filter: blur(12px);
-        border-radius: 20px;
-        padding: 30px 24px;
-        box-shadow: {t['card_shadow']};
-        border: 1px solid {t['card_border']};
-        text-align: center;
-        transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
-        position: relative;
-        overflow: hidden;
-        transform-style: preserve-3d;
-        perspective: 1000px;
-    }}
-    .stat-card::before {{
-        content: '';
-        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-        border-radius: 20px;
-        padding: 4px;
-        background: linear-gradient(135deg, transparent, rgba(255,255,255,0.2));
-        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-        -webkit-mask-composite: xor;
-        mask-composite: exclude;
-        pointer-events: none;
-    }}
-    .stat-card:hover {{
-        transform: translateY(-10px) rotateX(5deg) rotateY(-5deg) scale(1.03);
-        box-shadow: {t['hover_shadow']};
-    }}
-    
-    /* Accents for Stat Cards */
-    .stat-card .accent-bar {{
-        position: absolute; top: 0; left: 0; right: 0; height: 6px;
-        border-radius: 20px 20px 0 0;
-        opacity: 0.9;
-    }}
-    .stat-card.blue .accent-bar  {{ background: linear-gradient(90deg, #3B82F6, #60A5FA, #93C5FD); }}
-    .stat-card.red .accent-bar   {{ background: linear-gradient(90deg, #EF4444, #F87171, #FCA5A5); }}
-    .stat-card.green .accent-bar {{ background: linear-gradient(90deg, #10B981, #34D399, #6EE7B7); }}
+/* Cinematic Background System */
+.stApp::before {{
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: {t['bg']};
+    background-image:
+        radial-gradient(circle at 20% 30%, {t['blue']}22 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, {t['purple']}11 0%, transparent 40%),
+        linear-gradient(180deg, rgba(2, 6, 23, 0.4) 0%, rgba(2, 6, 23, 0.8) 100%),
+        url('data:image/png;base64,{BG_B64}');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: -1;
+}}
 
-    .stat-label {{
-        font-size: 0.9rem;
-        font-weight: 800;
-        color: {t['text_muted']};
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        margin-bottom: 8px;
-        transform: translateZ(20px);
-    }}
-    .stat-value {{
-        font-size: 3.2rem;
-        font-weight: 900;
-        color: {t['metric_value']};
-        line-height: 1.1;
-        margin-bottom: 4px;
-        background: linear-gradient(to right, {t['metric_value']}, {t['primary']});
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        transform: translateZ(40px);
-        text-shadow: 0 10px 20px rgba(0,0,0,0.1);
-    }}
-    .stat-sub {{
-        font-size: 0.85rem;
-        color: {t['text_muted']};
-        transform: translateZ(15px);
-    }}
+/* Haze Layer */
+.stApp::after {{
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: radial-gradient(circle at 50% 50%, transparent 0%, {t['bg']} 90%);
+    pointer-events: none;
+    z-index: -1;
+    opacity: 0.6;
+    animation: fogPulse 20s infinite alternate ease-in-out;
+}}
 
-    /* ================================================
-       ALERTS WITH 3D POP
-       ================================================ */
-    .alert-danger {{
-        background: {t['alert_danger_bg']};
-        color: {t['alert_danger_text']};
-        border-left: 8px solid {t['alert_danger_border']};
-        padding: 16px 20px;
-        border-radius: 12px;
-        margin-bottom: 12px;
-        font-weight: 700;
-        font-size: 1rem;
-        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.2);
-        animation: bounceInRight 0.6s cubic-bezier(0.215, 0.61, 0.355, 1);
-        transition: transform 0.2s;
-    }}
-    .alert-danger:hover {{ transform: scale(1.02); }}
+@keyframes fogPulse {{
+    0% {{ opacity: 0.4; transform: scale(1); }}
+    100% {{ opacity: 0.7; transform: scale(1.1); }}
+}}
 
-    .alert-success {{
-        background: {t['alert_success_bg']};
-        color: {t['alert_success_text']};
-        border-left: 8px solid {t['alert_success_border']};
-        padding: 16px 20px;
-        border-radius: 12px;
-        margin-bottom: 12px;
-        font-weight: 700;
-        font-size: 1rem;
-        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.2);
-        animation: bounceInRight 0.6s cubic-bezier(0.215, 0.61, 0.355, 1);
-        transition: transform 0.2s;
-    }}
-    .alert-success:hover {{ transform: scale(1.02); }}
+/* Layout Tweaks */
+.block-container {{
+    padding-top: 1.5rem !important;
+    padding-bottom: 0.5rem !important;
+    max-width: 96% !important;
+}}
 
-    /* ================================================
-       HEADER STATUS BADGE (GLOWING)
-       ================================================ */
-    .status-badge {{
-        background: {t['badge_bg']};
-        color: {t['badge_text']};
-        padding: 8px 22px;
-        border-radius: 30px;
-        font-weight: 800;
-        font-size: 0.9rem;
-        display: inline-block;
-        border: 1px solid {t['badge_border']};
-        box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
-        animation: pulse-glow 2s infinite;
-        letter-spacing: 1px;
-    }}
-    .status-badge-offline {{
-        background: {t['alert_danger_bg']};
-        color: {t['alert_danger_text']};
-        padding: 8px 22px;
-        border-radius: 30px;
-        font-weight: 800;
-        font-size: 0.9rem;
-        display: inline-block;
-        border: 1px solid {t['alert_danger_border']};
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        letter-spacing: 1px;
-    }}
+/* Glassmorphism Cards */
+.glass-card, .kpi-wrap {{
+    background: rgba(15, 23, 42, 0.6) !important;
+    border: 1px solid rgba(56, 189, 248, 0.2) !important;
+    border-radius: 20px !important;
+    padding: 18px !important;
+    margin-bottom: 16px !important;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    position: relative;
+    overflow: hidden;
+}}
 
-    /* ================================================
-       STREAMLIT METRIC OVERRIDES
-       ================================================ */
-    [data-testid="stMetricValue"] {{
-        font-size: 2.4rem !important;
-        font-weight: 800 !important;
-        color: {t['metric_value']} !important;
-    }}
-    [data-testid="stMetricLabel"] {{
-        font-size: 1rem !important;
-        font-weight: 600 !important;
-        color: {t['text_muted']} !important;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-    }}
-    [data-testid="stMetricDelta"] {{ display: none; }}
+.glass-card:hover {{
+    transform: translateY(-8px) scale(1.02);
+    border-color: rgba(56, 189, 248, 0.6) !important;
+    box-shadow: 0 15px 45px 0 rgba(0, 0, 0, 0.9), 0 0 25px rgba(56, 189, 248, 0.2);
+}}
 
-    /* ================================================
-       ANIMATIONS
-       ================================================ */
-    @keyframes bounceInRight {{
-        0% {{ opacity: 0; transform: translate3d(3000px, 0, 0); }}
-        60% {{ opacity: 1; transform: translate3d(-25px, 0, 0); }}
-        75% {{ transform: translate3d(10px, 0, 0); }}
-        90% {{ transform: translate3d(-5px, 0, 0); }}
-        100% {{ transform: none; }}
-    }}
-    @keyframes fadeIn {{
-        from {{ opacity: 0; transform: translateY(10px); }}
-        to   {{ opacity: 1; transform: translateY(0); }}
-    }}
-    @keyframes pulse-glow {{
-        0% {{ box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }}
-        70% {{ box-shadow: 0 0 0 15px rgba(16, 185, 129, 0); }}
-        100% {{ box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }}
-    }}
+/* Scanning Laser Effect */
+.glass-card::after {{
+    content: "";
+    position: absolute;
+    top: -100%;
+    left: -100%;
+    width: 300%;
+    height: 300%;
+    background: linear-gradient(
+        45deg,
+        transparent 45%,
+        rgba(56, 189, 248, 0.05) 48%,
+        rgba(56, 189, 248, 0.2) 50%,
+        rgba(56, 189, 248, 0.05) 52%,
+        transparent 55%
+    );
+    animation: scan-glow 6s infinite linear;
+    pointer-events: none;
+}}
+@keyframes scan-glow {{
+    0% {{ transform: translate(-30%, -30%) rotate(0deg); }}
+    100% {{ transform: translate(30%, 30%) rotate(360deg); }}
+}}
+.sec-head {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.25em;
+    color: #38BDF8 !important;
+    margin-bottom: 20px;
+    font-family: 'Space Grotesk', sans-serif;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.1);
+    position: relative;
+}}
 
-    /* Section titles */
-    .section-title {{
-        color: {t['text_primary']};
-        font-weight: 800;
-        font-size: 1.3rem;
-        margin-bottom: 16px;
-        display: inline-block;
-        position: relative;
-    }}
-    .section-title::after {{
-        content: '';
-        position: absolute; width: 40px; height: 4px;
-        background: {t['primary']};
-        bottom: -6px; left: 0;
-        border-radius: 2px;
-    }}
+.sec-head::after {{
+    content: "";
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 40px;
+    height: 2px;
+    background: #38BDF8;
+    box-shadow: 0 0 10px #38BDF8;
+}}
+/* KPI Cards */
+.kpi-wrap {{
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 140px !important;
+    background: linear-gradient(135deg, {t['surface']}, {t['bg']}66) !important;
+}}
 
-    /* Offline placeholder */
-    .offline-placeholder {{
-        background: {t['offline_bg']};
-        backdrop-filter: blur(8px);
-        height: 400px;
-        border-radius: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: {t['text_muted']};
-        font-size: 1.25rem;
-        font-weight: 600;
-        border: 2px dashed {t['card_border']};
-        box-shadow: inset 0 0 20px rgba(0,0,0,0.05);
-    }}
+.kpi-icon {{
+    font-size: 2rem;
+    margin-bottom: 6px;
+    filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
+    transition: transform 0.3s ease;
+}}
 
-    /* Log entry */
-    .log-entry {{
-        background: {t['card_bg']};
-        border: 1px solid {t['card_border']};
-        border-radius: 12px;
-        padding: 14px 18px;
-        margin-bottom: 10px;
-        font-size: 0.95rem;
-        color: {t['text_secondary']};
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        animation: fadeIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        transition: transform 0.2s;
-    }}
-    .log-entry:hover {{
-        transform: scale(1.02) translateX(5px);
-        border-left: 4px solid {t['danger']};
-    }}
-    .log-time {{
-        color: {t['text_muted']};
-        font-size: 0.85rem;
-        margin-right: 12px;
-        font-weight: 600;
-        background: {t['divider']};
-        padding: 2px 8px;
-        border-radius: 12px;
-    }}
+.kpi-wrap:hover .kpi-icon {{
+    transform: scale(1.2) rotate(5deg);
+}}
 
-    /* Settings panel card */
-    .settings-card {{
-        background: {t['card_bg']};
-        backdrop-filter: blur(12px);
-        border-radius: 20px;
-        padding: 32px;
-        box-shadow: {t['card_shadow']};
-        border: 1px solid {t['card_border']};
-        margin-bottom: 24px;
-        transition: all 0.3s;
-    }}
-    .settings-card:hover {{
-        box-shadow: {t['hover_shadow']};
-        transform: translateY(-5px);
-    }}
+.kpi-label {{
+    font-size: 0.75rem;
+    color: {t['text2']};
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 4px;
+}}
+
+.kpi-value {{
+    font-size: 2.8rem;
+    font-weight: 900;
+    margin: 4px 0;
+    font-family: 'Space Grotesk', sans-serif;
+    line-height: 1;
+    letter-spacing: -1px;
+}}
+
+.kpi-sub {{
+    font-size: 0.75rem;
+    color: {t['text2']};
+    font-weight: 500;
+    opacity: 0.7;
+}}
+
+/* KPI Status Colors */
+.kpi-blue .kpi-value {{ color: {t['blue']}; text-shadow: 0 0 30px {t['blue']}55; }}
+.kpi-red .kpi-value {{ color: {t['red']}; text-shadow: 0 0 30px {t['red']}55; }}
+.kpi-green .kpi-value {{ color: {t['green']}; text-shadow: 0 0 30px {t['green']}55; }}
+.kpi-purple .kpi-value {{ color: {t['purple']}; text-shadow: 0 0 30px {t['purple']}55; }}
+
+/* Sidebar Styling */
+[data-testid="stSidebar"] {{
+    background-color: rgba(2, 6, 23, 0.8) !important;
+    backdrop-filter: blur(20px);
+    border-right: 1px solid {t['border']} !important;
+}}
+
+.sb-header {{
+    background: linear-gradient(135deg, {t['bg']}, {t['blue']}33);
+    padding: 40px 20px;
+    text-align: center;
+    border-bottom: 1px solid {t['border']};
+    margin: -60px -20px 20px -20px;
+    position: relative;
+    overflow: hidden;
+}}
+
+.sb-header::after {{
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, {t['blue']}, transparent);
+    animation: scanline 3s infinite;
+}}
+
+@keyframes scanline {{
+    0% {{ transform: translateX(-100%); }}
+    100% {{ transform: translateX(100%); }}
+}}
+
+.sb-logo {{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    color: white;
+    text-shadow: 0 0 20px {t['blue']}88;
+}}
+
+/* Buttons */
+.stButton > button {{
+    border-radius: 12px !important;
+    background: {t['surface2']} !important;
+    border: 1px solid {t['border']} !important;
+    color: {t['text']} !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-size: 0.8rem !important;
+    padding: 0.6rem 1rem !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}}
+
+.stButton > button:hover {{
+    background: linear-gradient(90deg, {t['blue']}, {t['purple']}) !important;
+    color: white !important;
+    border-color: transparent !important;
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px {t['blue']}44;
+}}
+
+/* Alerts */
+.pill-danger, .pill-success, .pill-idle, .pill-fallen {{
+    padding: 16px 20px;
+    border-radius: 16px;
+    margin-bottom: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid transparent;
+    animation: alertSlide 0.5s ease-out;
+    backdrop-filter: blur(10px);
+}}
+
+@keyframes alertSlide {{
+    from {{ transform: translateX(20px); opacity: 0; }}
+    to {{ transform: translateX(0); opacity: 1; }}
+}}
+
+.pill-danger {{ background: {t['red']}22; color: {t['red']}; border-color: {t['red']}44; box-shadow: 0 4px 15px {t['red']}22; }}
+.pill-success {{ background: {t['green']}22; color: {t['green']}; border-color: {t['green']}44; box-shadow: 0 4px 15px {t['green']}22; }}
+.pill-idle {{ background: rgba(148, 163, 184, 0.1); color: {t['text2']}; border-color: {t['border']}; opacity: 0.6; }}
+.pill-fallen {{ 
+    background: linear-gradient(90deg, {t['red']}, #ff8095); 
+    color: white; 
+    border-color: rgba(255,255,255,0.4);
+    box-shadow: 0 10px 30px {t['red']}66;
+    animation: criticalPulse 1.5s infinite;
+}}
+
+@keyframes criticalPulse {{
+    0% {{ transform: scale(1); box-shadow: 0 0 20px {t['red']}66; }}
+    50% {{ transform: scale(1.02); box-shadow: 0 0 40px {t['red']}aa; }}
+    100% {{ transform: scale(1); box-shadow: 0 0 20px {t['red']}66; }}
+}}
+
+/* Logs */
+.log-row {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    border-bottom: 1px solid {t['border']}33;
+    font-size: 0.85rem;
+    color: {t['text']};
+    animation: fadeIn 0.5s ease-in;
+}}
+
+.log-ts {{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: {t['blue']};
+    opacity: 0.8;
+    background: {t['blue']}11;
+    padding: 2px 6px;
+    border-radius: 4px;
+}}
+
+/* Video Feed Overlay */
+.feed-container {{
+    border: 1px solid {t['border']};
+    border-radius: 20px;
+    overflow: hidden;
+    background: #000;
+    position: relative;
+    box-shadow: 0 0 40px rgba(0,0,0,0.5);
+}}
+
+/* Sidebar Status & Metrics */
+.sb-section {{
+    font-size: 0.75rem;
+    font-weight: 800;
+    color: {t['blue']};
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin: 25px 0 12px 0;
+    opacity: 0.9;
+    font-family: 'Space Grotesk', sans-serif;
+}}
+
+.sb-status-row {{
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid {t['border']}33;
+}}
+
+.sb-status-label {{ font-size: 0.8rem; color: {t['text2']}; }}
+.sb-status-val {{ font-size: 0.8rem; color: {t['text']}; font-weight: 700; }}
+
+.sb-mini-grid {{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 15px;
+}}
+
+.sb-mini {{
+    padding: 15px 10px;
+    border-radius: 16px;
+    background: {t['surface2']}44;
+    border: 1px solid {t['border']};
+    text-align: center;
+    backdrop-filter: blur(5px);
+    transition: all 0.3s ease;
+}}
+
+.sb-mini:hover {{
+    background: {t['blue']}22;
+    border-color: {t['blue']}66;
+    transform: translateY(-2px);
+}}
+
+.sb-mini-val {{ 
+    font-size: 1.4rem; 
+    font-weight: 900; 
+    color: {t['text']}; 
+    font-family: 'Space Grotesk', sans-serif;
+    line-height: 1;
+}}
+
+.sb-mini-lbl {{ 
+    font-size: 0.6rem; 
+    color: {t['text2']}; 
+    text-transform: uppercase; 
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+    font-weight: 700;
+}}
+
+.sb-footer {{
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid {t['border']}33;
+    font-size: 0.7rem;
+    color: {t['text2']};
+    text-align: center;
+    opacity: 0.6;
+}}
+
+@keyframes fadeIn {{
+    from {{ opacity: 0; }}
+    to {{ opacity: 1; }}
+}}
 </style>
 """
 
-
-# ==========================================
-# PAGE CONFIG
-# ==========================================
 PAGE_CONFIG = {
-    "page_title": "Safety Monitoring Dashboard",
+    "page_title": "Safety AI Dashboard",
     "layout": "wide",
     "page_icon": "🛡️",
 }

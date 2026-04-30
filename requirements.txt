@@ -3,3 +3,5 @@ opencv-python>=4.8.0
 ultralytics>=8.0.0
 numpy
 pandas
+lapx
+plotly
