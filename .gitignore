@@ -1,0 +1,15 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Models (Large files)
+yolov8x-pose.pt
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Streamlit
+.streamlit/
