@@ -83,7 +83,7 @@ def render_attendance_table():
     df = pd.DataFrame(data)
     st.dataframe(df, use_container_width=True, hide_index=True)
 
-def render_emergency_banner(active=False):
+def render_emergency_banner(active=False, key_id=""):
     if active:
         cols = st.columns([0.9, 0.1])
         with cols[0]:
@@ -97,7 +97,8 @@ def render_emergency_banner(active=False):
                 </div>
             """, unsafe_allow_html=True)
         with cols[1]:
-            if st.button("✖️", key="dismiss_fall_alert", help="Dismiss Alert"):
+            # Use unique key to avoid Streamlit Duplicate Key error
+            if st.button("✖️", key=f"dismiss_fall_{key_id}", help="Dismiss Alert"):
                 return True
     return False
 

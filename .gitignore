@@ -31,7 +31,7 @@ Thumbs.db
 
 # Project Specific
 graphify-out/
-#scratch/
+scratch/
 temp/
 logs/
 *.log

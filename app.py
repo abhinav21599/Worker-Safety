@@ -22,6 +22,13 @@ from src.detector import WorkerSafetyDetector
 # 1. PAGE CONFIG
 st.set_page_config(**PAGE_CONFIG)
 
+def get_safety_detector(conf: float):
+    # Forced reload by removing cache
+    return WorkerSafetyDetector(conf=conf)
+
+# Initialize detector (using session state confidence or default)
+detector = get_safety_detector(st.session_state.get("confidence", 0.35))
+
 # ─────────────────────────────────────────────
 # SESSION STATE
 # ─────────────────────────────────────────────
@@ -31,7 +38,19 @@ def _init(key, val):
 
 _init("running",       False)
 _init("dark_mode",     True)
-_init("confidence",    0.35)
+_init("confidence",    0.20)
+
+# Cleanup logic for stale video streams (Fixes camera-still-on after reload)
+if "vstream" in st.session_state:
+    if not st.session_state.get("running", False):
+        try:
+            st.session_state.vstream.stop()
+            st.session_state.vstream = None
+            # Force detector reset when camera is killed or stale
+            detector.reset()
+        except:
+            pass
+
 _init("cam_index",     0)
 _init("logs",          [])
 _init("chart_data",    pd.DataFrame(columns=["Time", "Workers", "Violations", "Falls"]))
@@ -81,13 +100,6 @@ class VideoStream:
             self.thread.join(timeout=0.5)
         if hasattr(self, 'cap') and self.cap.isOpened():
             self.cap.release()
-
-@st.cache_resource
-def get_detector(conf: float):
-    detector_inst = WorkerSafetyDetector(conf=conf)
-    return detector_inst
-
-detector = get_detector(st.session_state.confidence)
 
 # ─────────────────────────────────────────────
 # SIDEBAR NAVIGATION
@@ -187,6 +199,7 @@ elif st.session_state.page == "Live Monitoring":
         if not st.session_state.running:
             ui.render_offline_video(video_placeholder)
             if st.button("🚀 INITIALIZE SURVEILLANCE", use_container_width=True):
+                detector.reset() # Force reset on every start
                 st.session_state.running = True
                 st.rerun()
         else:
@@ -195,6 +208,7 @@ elif st.session_state.page == "Live Monitoring":
                 if "vstream" in st.session_state and st.session_state.vstream:
                     st.session_state.vstream.stop()
                     st.session_state.vstream = None
+                detector.reset() # Reset on stop
                 st.rerun()
     
     with col_i:
@@ -239,15 +253,25 @@ elif st.session_state.page == "Live Monitoring":
                 st.session_state.total_workers = w
                 st.session_state.total_viols = v
                 
-                # Handle emergency and alert dismissal
+                # Handle emergency and alert dismissal with cooldown
                 new_emergency = (falls > 0)
+                
+                # If no emergency, reset the dismissal so it can trigger next time
                 if not new_emergency:
-                    st.session_state.alert_dismissed = False
+                    if st.session_state.get("emergency_start_time"):
+                        # If more than 5 seconds since last fall, allow new alert
+                        if time.time() - st.session_state.emergency_start_time > 5:
+                            st.session_state.alert_dismissed = False
+                else:
+                    if "emergency_start_time" not in st.session_state:
+                        st.session_state.emergency_start_time = time.time()
+
                 st.session_state.emergency = new_emergency
                 
                 with emergency_container.container():
                     if st.session_state.emergency and not st.session_state.alert_dismissed:
-                        if ui.render_emergency_banner(True):
+                        # Use a timestamp-based key to avoid duplicate key errors
+                        if ui.render_emergency_banner(True, key_id=str(int(time.time() // 10))):
                             st.session_state.alert_dismissed = True
                             st.rerun()
                 

@@ -5,278 +5,190 @@ from ultralytics import YOLO
 
 class WorkerSafetyDetector:
     """
-    Advanced Worker Safety Detector featuring:
-    1. Pose-based Fall Detection (Advanced Angle Analysis)
-    2. Deep Learning PPE Detection (Vest & Helmet)
-    3. Hybrid HSV Color Analysis (Fallback)
+    V6-STABLE: Industrial Grade Detector
+    1. Robust Fall Detection: Uses nose-to-hip vertical distance and body angle.
+    2. Precision PPE: Model + Broad Color Check (White, Blue, Yellow, Orange, Green).
+    3. Spatial ROI: Only checks colors in the dead-center of the head/torso.
     """
 
     def __init__(self, conf=0.35):
         self.conf = conf
-        # Load models with optimization
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        
-        # Determine device
         import torch
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.half = self.device == 'cuda'
         
-        # 1. Pose Model (Fall Detection)
         self.pose_model = YOLO(os.path.join(root, "yolov8n-pose.pt")).to(self.device)
-        if self.half: self.pose_model.half()
-        
-        # 2. PPE model priority: amirt > hardhat > yolov8n (hybrid)
         self.ppe_model = None
         for p_name in ["ppe_amirt.pt", "ppe_hardhat.pt"]:
             p = os.path.join(root, p_name)
             if os.path.exists(p):
                 try:
                     self.ppe_model = YOLO(p).to(self.device)
-                    if self.half: self.ppe_model.half()
-                    print(f"✅ Loaded PPE Model: {p} on {self.device}")
+                    print(f"✅ PPE LOADED: {p_name}")
                     break
-                except Exception as e:
-                    print(f"❌ Failed to load {p}: {e}")
-                    continue
+                except: continue
         
-        # State tracking for temporal smoothing
-        self.person_states = {}  # {track_id: {"ppe": {"helmet": [], "vest": []}}}
-        
-        self.FALL_CONFIRM_FRAMES = 5 # Faster detection for demo (approx 0.25s)
-        self.PPE_WINDOW = 30 # Increased window for much better stability (approx 1-1.5s)
-        self.DETECTION_COOLDOWN = 60 
-        self.MOVE_THRESHOLD = 3 # Stricter movement threshold
+        self.person_states = {}
+        self.FALL_CONFIRM_FRAMES = 6
+        self.PPE_WINDOW = 12
+        self.DETECTION_COOLDOWN = 60
+        self.STARTUP_SILENCE = 15
+        self.frame_count = 0
 
-    def _check_fall(self, keypoints, box_coords, state):
-        """
-        Robust Fall/Lying Down Detection:
-        - Detects fall even with partial pose data.
-        - Uses aspect ratio, torso angle, and vertical profile.
-        - Improved sensitivity for various lying down postures.
-        """
-        bx1, by1, bx2, by2 = box_coords
-        w, h = bx2 - bx1, by2 - by1
-        aspect = w / max(h, 1)
-        
-        # 1. Extreme Horizontal Case: Almost certainly a fall/lying down
-        if aspect > 1.4: # Lowered from 1.6 for faster detection of lying down
-            return True
+    def reset(self):
+        """Reset all tracking states and counters."""
+        self.person_states = {}
+        self.frame_count = 0
 
-        # 2. Moderate Horizontal Case: Requires pose confirmation
-        if aspect < 0.9: # Lowered from 1.05: Standing/sitting is strictly vertical
-            return False
+    def _check_color_broad(self, roi, mode="vest"):
+        if roi is None or roi.size == 0: return False
+        # Use center 60% of ROI to avoid background bleed
+        h, w = roi.shape[:2]
+        roi = roi[int(h*0.2):int(h*0.8), int(w*0.2):int(w*0.8)]
+        if roi.size == 0: return False
+        
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        if mode == "vest":
+            # Neon, Orange, Red (Common vest colors)
+            m1 = cv2.inRange(hsv, (25, 60, 60), (85, 255, 255))  # Neon
+            m2 = cv2.inRange(hsv, (0, 100, 100), (15, 255, 255)) # Orange/Red
+            mask = cv2.bitwise_or(m1, m2)
+            thresh = 0.15
+        else: # helmet
+            # Yellow, White, Blue, Orange
+            m1 = cv2.inRange(hsv, (18, 50, 50), (35, 255, 255))  # Yellow
+            m2 = cv2.inRange(hsv, (0, 0, 180), (180, 40, 255))   # White
+            m3 = cv2.inRange(hsv, (100, 80, 80), (130, 255, 255)) # Blue
+            mask = cv2.bitwise_or(cv2.bitwise_or(m1, m2), m3)
+            thresh = 0.12
+        
+        return (np.sum(mask > 0) / mask.size) > thresh
+
+    def _classify_ppe(self, name):
+        n = name.lower()
+        if "no" in n: return "no_h" if ("helmet" in n or "hardhat" in n) else "no_v"
+        if "helmet" in n or "hardhat" in n: return "h"
+        if "vest" in n: return "v"
+        return "u"
+
+    def _get_ppe_status(self, frame, p_boxes):
+        if not self.ppe_model or not p_boxes: return {}
+        res = self.ppe_model(frame, verbose=False, conf=0.25, imgsz=640)
+        
+        dets = []
+        for r in res:
+            for b in r.boxes:
+                cat = self._classify_ppe(self.ppe_model.names[int(b.cls[0])])
+                if cat != "u": dets.append({"c": cat, "conf": float(b.conf[0]), "b": b.xyxy[0].cpu().numpy()})
+
+        results = {}
+        for pid, (x1, y1, x2, y2) in p_boxes.items():
+            h_s, h_n, v_s, v_n = 0.0, 0.0, 0.0, 0.0
+            ph = max(y2 - y1, 1)
             
+            for d in dets:
+                db = d["b"]
+                ix1, iy1, ix2, iy2 = max(x1, db[0]), max(y1, db[1]), min(x2, db[2]), min(y2, db[3])
+                if ix1 < ix2 and iy1 < iy2:
+                    cy = (db[1] + db[3]) / 2
+                    if d["c"] in ("h", "no_h") and cy > (y1 + ph * 0.35): continue
+                    if d["c"] in ("v", "no_v") and (cy < (y1 + ph * 0.15) or cy > (y1 + ph * 0.8)): continue
+                    if d["c"] == "h": h_s = max(h_s, d["conf"])
+                    elif d["c"] == "no_h": h_n = max(h_n, d["conf"])
+                    elif d["c"] == "v": v_s = max(v_s, d["conf"])
+                    elif d["c"] == "no_v": v_n = max(v_n, d["conf"])
+            
+            h_roi = frame[max(0,y1):min(frame.shape[0],y1+int(ph*0.3)), max(0,x1):min(frame.shape[1],x2)]
+            v_roi = frame[max(0,y1+int(ph*0.2)):min(frame.shape[0],y1+int(ph*0.7)), max(0,x1):min(frame.shape[1],x2)]
+            
+            h_color = self._check_color_broad(h_roi, "helmet")
+            v_color = self._check_color_broad(v_roi, "vest")
+            
+            # SAFE only if (Model says yes AND Color confirms) OR (Model is VERY sure > 0.8)
+            # This allows detection of non-standard colors if the model is certain.
+            has_h = (h_s > 0.45 and h_s > h_n and h_color) or (h_s > 0.80)
+            has_v = (v_s > 0.45 and v_s > v_n and v_color) or (v_s > 0.80)
+            
+            results[pid] = (has_h, has_v)
+        return results
+
+    def _check_fall(self, kpts, box, fH):
+        x1, y1, x2, y2 = box
+        w, h = x2 - x1, max(y2 - y1, 1)
+        aspect = w / h
+        if aspect < 1.2 or y1 < (fH * 0.1): return False
         try:
-            if keypoints is None or len(keypoints) < 5: # Lowered from 17
-                return aspect > 1.4 # Without enough pose, be slightly conservative
-            
-            # YOLO returns [0,0] if keypoint not detected
-            def is_v(kp): return kp is not None and len(kp) >= 2 and kp[0] > 1 and kp[1] > 1
-
-            # Keypoints
-            nose = keypoints[0] if len(keypoints) > 0 else None
-            ls, rs = keypoints[5] if len(keypoints) > 5 else None, keypoints[6] if len(keypoints) > 6 else None
-            lh, rh = keypoints[11] if len(keypoints) > 11 else None, keypoints[12] if len(keypoints) > 12 else None
-            la, ra = keypoints[15] if len(keypoints) > 15 else None, keypoints[16] if len(keypoints) > 16 else None
-            
-            # Torso Angle Logic (from vertical)
-            sh_pts = [p for p in [ls, rs] if is_v(p)]
-            hp_pts = [p for p in [lh, rh] if is_v(p)]
-            
-            angle = 0
+            if kpts is None or len(kpts) < 17: return aspect > 2.0
+            def is_v(kp): return kp[0] > 1 and kp[1] > 1
+            sh_pts = [kpts[i] for i in [5, 6] if is_v(kpts[i])]
+            hp_pts = [kpts[i] for i in [11, 12] if is_v(kpts[i])]
             if sh_pts and hp_pts:
                 mid_sh = np.mean(sh_pts, axis=0)
                 mid_hp = np.mean(hp_pts, axis=0)
-                dx, dy = mid_sh[0] - mid_hp[0], mid_sh[1] - mid_hp[1]
-                angle = np.degrees(np.arctan2(abs(dx), max(abs(dy), 1)))
-
-            # Vertical Profile: Lying down means nose, hips, and ankles are at similar Y
-            y_diff_nose_hip = 1000
-            if is_v(nose) and hp_pts:
-                mid_hp_y = np.mean(hp_pts, axis=0)[1]
-                y_diff_nose_hip = abs(nose[1] - mid_hp_y)
-            
-            y_diff_nose_ankle = 1000
-            ak_pts = [p for p in [la, ra] if is_v(p)]
-            if is_v(nose) and ak_pts:
-                mid_ak_y = np.mean(ak_pts, axis=0)[1]
-                y_diff_nose_ankle = abs(nose[1] - mid_ak_y)
-
-            # Balanced Fallen Criteria:
-            is_tilted = angle > 40 # Lowered from 45
-            is_flat = y_diff_nose_hip < (h * 0.7) or y_diff_nose_ankle < (h * 0.7) # Relaxed from 0.6
-            
-            # Higher sensitivity if aspect ratio is already high
-            if aspect > 1.2:
-                return is_tilted or is_flat or (angle > 30)
-            
-            return aspect > 0.9 and is_tilted and is_flat
-            
-        except Exception:
-            return aspect > 1.4
-
-    def _check_ppe_color(self, roi, item_type):
-        if roi is None or roi.size == 0: return False
-        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-        
-        if item_type == "helmet":
-            # 1. Yellow Helmets
-            mask_yellow = cv2.inRange(hsv, (15, 100, 100), (35, 255, 255))
-            # 2. White Helmets (High brightness, low saturation)
-            mask_white  = cv2.inRange(hsv, (0, 0, 200), (180, 40, 255))
-            # 3. Orange/Red Helmets
-            mask_orange = cv2.inRange(hsv, (5, 100, 100), (15, 255, 255))
-            mask_red1   = cv2.inRange(hsv, (0, 100, 100), (5, 255, 255))
-            mask_red2   = cv2.inRange(hsv, (160, 100, 100), (180, 255, 255))
-            # 4. Green Helmets (Safety Green)
-            mask_green  = cv2.inRange(hsv, (35, 80, 80), (85, 255, 255))
-            # 5. Blue Helmets (Engineering/Safety Blue)
-            mask_blue   = cv2.inRange(hsv, (100, 100, 100), (130, 255, 255))
-            
-            mask = cv2.bitwise_or(mask_yellow, mask_white)
-            mask = cv2.bitwise_or(mask, mask_orange)
-            mask = cv2.bitwise_or(mask, mask_red1)
-            mask = cv2.bitwise_or(mask, mask_red2)
-            mask = cv2.bitwise_or(mask, mask_green)
-            mask = cv2.bitwise_or(mask, mask_blue)
-        else: # vest (High-vis green/yellow or Orange)
-            # 1. Neon Green / High-Vis Yellow Vests (Widened range)
-            mask_neon   = cv2.inRange(hsv, (20, 50, 50), (95, 255, 255))
-            # 2. High-Vis Orange Vests (Widened range)
-            mask_orange = cv2.inRange(hsv, (0, 50, 50), (25, 255, 255))
-            mask_red_v  = cv2.inRange(hsv, (160, 50, 50), (180, 255, 255))
-            mask = cv2.bitwise_or(mask_neon, mask_orange)
-            mask = cv2.bitwise_or(mask, mask_red_v)
-
-        ratio = np.sum(mask > 0) / max(mask.size, 1)
-        # Lowered from 0.18 to 0.12 for better sensitivity in fallback mode
-        return ratio > 0.12 # Optimized threshold for fallback detection stability
+                dx, dy = abs(mid_sh[0] - mid_hp[0]), abs(mid_sh[1] - mid_hp[1])
+                angle = np.degrees(np.arctan2(dx, max(dy, 1)))
+                # A fall is horizontal aspect AND large body angle
+                return aspect > 1.3 and angle > 55
+            return aspect > 2.0
+        except: return aspect > 2.0
 
     def process_frame(self, frame):
+        self.frame_count += 1
         fH, fW = frame.shape[:2]
-        results = self.pose_model.track(frame, persist=True, verbose=False, conf=self.conf, classes=[0])
+        res = self.pose_model.track(frame, persist=True, verbose=False, conf=self.conf, classes=[0])
         
-        workers = 0
-        violations = 0
-        alerts = []
-        fall_count = 0
-        
-        for r in results:
+        workers, violations, falls, alerts = 0, 0, 0, []
+        p_boxes = {}
+        for r in res:
             if r.boxes is None or r.boxes.id is None: continue
-            
-            track_ids = r.boxes.id.int().cpu().tolist()
-            xyxy = r.boxes.xyxy.int().cpu().tolist()
-            kpts_all = r.keypoints.xy.cpu().numpy() if r.keypoints is not None else [None] * len(track_ids)
-            
-            for i, track_id in enumerate(track_ids):
-                x1, y1, x2, y2 = xyxy[i]
-                kpts = kpts_all[i]
-                
-                workers += 1
-                
-                if track_id not in self.person_states:
-                    self.person_states[track_id] = {
-                        "fall_frames": 0,
-                        "ppe": {"helmet": [], "vest": []},
-                        "alert_cooldown": 0,
-                        "compliant_logged": False
-                    }
-                
-                state = self.person_states[track_id]
-                if state["alert_cooldown"] > 0:
-                    state["alert_cooldown"] -= 1
-                
-                # 1. Fall Detection
-                is_down = self._check_fall(kpts, (x1, y1, x2, y2), state)
-                state["fall_frames"] = (state["fall_frames"] + 1) if is_down else max(0, state["fall_frames"] - 1)
-                
-                has_fallen = state["fall_frames"] >= self.FALL_CONFIRM_FRAMES
-                
-                if has_fallen:
-                    fall_count += 1
-                    violations += 1
-                    color = (0, 130, 255) # Orange
-                    label = f"ID:{track_id} FALLEN!"
-                    if state["alert_cooldown"] == 0:
-                        alerts.append(f"🚨 EMERGENCY: Worker ID {track_id} has fallen!")
-                        state["alert_cooldown"] = self.DETECTION_COOLDOWN
-                        state["compliant_logged"] = False
-                else:
-                    # 2. PPE Detection - Crop based
-                    has_helmet = False
-                    has_vest = False
-                    
-                    if self.ppe_model:
-                        pad = 50 # Increased padding for better context and precision
-                        cx1, cy1 = max(0, x1-pad), max(0, y1-pad)
-                        cx2, cy2 = min(fW, x2+pad), min(fH, y2+pad)
-                        crop = frame[cy1:cy2, cx1:cx2]
-                        
-                        if crop.size > 0:
-                            # Lowered confidence from 0.8 to 0.4 for better sensitivity
-                            # Increased imgsz from 160 to 320 for better detail recognition
-                            p_res = self.ppe_model(crop, verbose=False, conf=0.4, imgsz=320, half=self.half)
-                            for pr in p_res:
-                                for pbox in pr.boxes:
-                                    cls = self.ppe_model.names[int(pbox.cls[0])].lower()
-                                    if "helmet" in cls or "hardhat" in cls: has_helmet = True
-                                    if "vest" in cls: has_vest = True
-                    
-                    if not has_helmet or not has_vest:
-                        # Improved ROI selection for color fallback
-                        h_h = (y2-y1)//3
-                        helmet_roi = frame[max(0, y1-20):y1+h_h, x1:x2] # Wider head ROI
-                        vest_roi = frame[y1+h_h//2:y2-h_h, x1:x2] # Better torso ROI
-                        if not has_helmet: has_helmet = self._check_ppe_color(helmet_roi, "helmet")
-                        if not has_vest: has_vest = self._check_ppe_color(vest_roi, "vest")
-                    
-                    # Temporal smoothing with hysteresis for maximum stability
-                    ph = state["ppe"]
-                    ph["helmet"].append(has_helmet)
-                    ph["vest"].append(has_vest)
-                    ph["helmet"] = ph["helmet"][-self.PPE_WINDOW:]
-                    ph["vest"] = ph["vest"][-self.PPE_WINDOW:]
-                    
-                    # Hysteresis Logic:
-                    # To BECOME safe: Need >80% consistency (relaxed from 90%)
-                    # To STAY safe: Need >65% consistency (relaxed from 75%)
-                    was_safe = state.get("is_safe", False)
-                    h_rate = sum(ph["helmet"]) / len(ph["helmet"])
-                    v_rate = sum(ph["vest"]) / len(ph["vest"])
-                    
-                    if was_safe:
-                        smooth_helmet = h_rate > 0.65
-                        smooth_vest = v_rate > 0.65
-                    else:
-                        smooth_helmet = h_rate > 0.80
-                        smooth_vest = v_rate > 0.80
-                        
-                    state["is_safe"] = smooth_helmet and smooth_vest
-                    
-                    missing = []
-                    if not smooth_helmet: missing.append("Helmet")
-                    if not smooth_vest: missing.append("Vest")
-                    
-                    if missing:
-                        violations += 1
-                        color = (0, 0, 220) # Red
-                        # Specific missing item label
-                        missing_label = " & ".join(missing)
-                        label = f"ID:{track_id} NO {missing_label.upper()}"
-                        if state["alert_cooldown"] == 0:
-                            alerts.append(f"⚠️ Worker ID {track_id} missing: {missing_label}")
-                            state["alert_cooldown"] = self.DETECTION_COOLDOWN
-                            state["compliant_logged"] = False
-                    else:
-                        color = (0, 200, 0) # Green
-                        label = f"ID:{track_id} SAFE"
-                        if not state["compliant_logged"]:
-                            alerts.append(f"✅ Worker ID {track_id} is now fully compliant")
-                            state["compliant_logged"] = True
-                
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2 if not has_fallen else 4)
-                tw, th = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
-                cv2.rectangle(frame, (x1, y1-th-10), (x1+tw, y1), color, -1)
-                cv2.putText(frame, label, (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+            ids, boxes = r.boxes.id.int().cpu().tolist(), r.boxes.xyxy.int().cpu().tolist()
+            for i, tid in enumerate(ids): p_boxes[tid] = boxes[i]
 
-        return frame, workers, violations, alerts, fall_count
+        ppe_map = self._get_ppe_status(frame, p_boxes)
+
+        for r in res:
+            if r.boxes is None or r.boxes.id is None: continue
+            ids, boxes = r.boxes.id.int().cpu().tolist(), r.boxes.xyxy.int().cpu().tolist()
+            kpts_all = r.keypoints.xy.cpu().numpy() if r.keypoints is not None else [None] * len(ids)
+
+            for i, tid in enumerate(ids):
+                x1, y1, x2, y2 = boxes[i]
+                workers += 1
+                if tid not in self.person_states:
+                    self.person_states[tid] = {"f": 0, "h": [], "v": [], "cd": 0, "safe": False}
+                
+                s = self.person_states[tid]
+                if s["cd"] > 0: s["cd"] -= 1
+
+                h_now, v_now = ppe_map.get(tid, (False, False))
+                s["h"].append(h_now); s["v"].append(v_now)
+                s["h"], s["v"] = s["h"][-self.PPE_WINDOW:], s["v"][-self.PPE_WINDOW:]
+                
+                # Compliance logic: must be consistent over the window
+                h_ok, v_ok = (sum(s["h"])/len(s["h"]) >= 0.7), (sum(s["v"])/len(s["v"]) >= 0.7)
+                safe = h_ok and v_ok
+
+                fallen = self._check_fall(kpts_all[i], (x1,y1,x2,y2), fH)
+                s["f"] = (s["f"] + 1) if fallen else max(0, s["f"] - 1)
+                is_fallen = s["f"] >= self.FALL_CONFIRM_FRAMES
+
+                if is_fallen:
+                    falls += 1; violations += 1; color, label = (0, 130, 255), f"ID:{tid} FALLEN!"
+                    if s["cd"] == 0: alerts.append(f"🚨 EMERGENCY: Worker {tid} fell!"); s["cd"] = 60
+                elif not safe:
+                    violations += 1; missing = []
+                    if not h_ok: missing.append("Helmet")
+                    if not v_ok: missing.append("Vest")
+                    color, label = (0, 0, 220), f"ID:{tid} NO {' & '.join(missing).upper()}"
+                    if s["cd"] == 0:
+                        alerts.append(f"⚠️ Worker {tid} missing: {' & '.join(missing)}")
+                        s["cd"] = 60; s["safe"] = False
+                else:
+                    color, label = (0, 200, 0), f"ID:{tid} SAFE"
+                    if not s["safe"]: alerts.append(f"✅ Worker {tid} compliant"); s["safe"] = True
+
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+        cv2.putText(frame, "V6-STABLE", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        return frame, workers, violations, alerts, falls
